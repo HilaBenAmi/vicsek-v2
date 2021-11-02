@@ -92,7 +92,7 @@ if __name__ == "__main__":
                 {"length": 10,
                  "density": 0.05,  # how many cells in one unit
                  "speed": 0.2,  # pixels per frame
-                 "noise": 10,
+                 "noise": 2,
                  "radius": 2,  # the radius in pixels to determine neighbors
                  "leader_weights": [8, 0],
                  "follower_weights": [0, 8],
