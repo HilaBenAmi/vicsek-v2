@@ -10,7 +10,7 @@ from scipy.spatial.distance import pdist, squareform
 
 log = logging.getLogger(__name__)
 
-ParticleProperty = Union[float, Iterable[float]]
+ParticleProperty = Union[float, Iterable]
 
 
 # TODO: probably silly to rely on explicit property 'particles'
@@ -61,9 +61,15 @@ class VicsekModel:
         distribution with limits +/- ``0.5*noise``.
     radius : float or iterable, optional
         Interaction radius of particles. One by default.
-    weights : float or iterable, optional
-        Relative weights of the particles in the interaction term. By default all
-        particles carry the same weight.
+    leader_weights : float or iterable, optional
+        Relative weights of the particles in the interaction term, which refer to how much a particle will
+        lead other particles. By default all particles carry the same weight.
+    follower_weights : float or iterable, optional
+        Relative weights of the particles in the interaction term, which refer to how much a particle will
+        follow other particles. By default all particles carry the same weight.
+    memory_weights : float or iterable, optional
+        Relative weights of the particles which refer to how much a particle will
+        remember the last direction of intself. By default all particles carry the same weight.
     seed : int or None, optional
         Seed for random number generator. By providing a known integer one can
         reproduce the evolution of the model. None by default.
@@ -95,7 +101,9 @@ class VicsekModel:
         speed: ParticleProperty,
         noise: ParticleProperty,
         radius: ParticleProperty = 1,
-        weights: ParticleProperty = 1,
+        leader_weights: ParticleProperty = 1,
+        follower_weights: ParticleProperty = 1,
+        memory_weights: ParticleProperty = 1,
         seed: Union[int, None] = None,
     ):
 
@@ -104,7 +112,9 @@ class VicsekModel:
         self.speed = speed
         self.noise = noise
         self.radius = radius
-        self.weights = weights
+        self.leader_weights = leader_weights
+        self.follower_weights = follower_weights
+        self.memory_weights = memory_weights
 
         self.init_state(seed=seed)
 
@@ -174,18 +184,46 @@ class VicsekModel:
         self._noise = new
 
     @property
-    def weights(self) -> np.ndarray:
+    def leader_weights(self) -> np.ndarray:
         """Array containing the relative weights of the particles, which determines how
         influencial they are in determining the heading of nearby particles."""
-        return self._weights
+        return self._leader_weights
 
-    @weights.setter
+    @leader_weights.setter
     @expand_to_array
-    def weights(self, new: ParticleProperty):
+    def leader_weights(self, new: ParticleProperty):
         """Setter for weights."""
         if np.any(new < 0):
             raise ValueError("The weights must be positive.")
-        self._weights = new
+        self._leader_weights = new
+
+    @property
+    def follower_weights(self) -> np.ndarray:
+        """Array containing the relative weights of the particles, which determines how
+        influencial they are in determining the heading of nearby particles."""
+        return self._follower_weights
+
+    @follower_weights.setter
+    @expand_to_array
+    def follower_weights(self, new: ParticleProperty):
+        """Setter for weights."""
+        if np.any(new < 0):
+            raise ValueError("The weights must be positive.")
+        self._follower_weights = new
+
+    @property
+    def memory_weights(self) -> np.ndarray:
+        """Array containing the relative weights of the particles, which determines how
+        influencial they are in determining the heading of nearby particles."""
+        return self._memory_weights
+
+    @memory_weights.setter
+    @expand_to_array
+    def memory_weights(self, new: ParticleProperty):
+        """Setter for weights."""
+        if np.any(new < 0):
+            raise ValueError("The weights must be positive.")
+        self._memory_weights = new
 
     # --------------------------------------------------------------------------------
     #                                                         | Read-only properties |
@@ -262,21 +300,26 @@ class VicsekModel:
         """Performs a single step for all particles."""
         # Generate adjacency matrix - true if separation less than radius
         distance_matrix = squareform(pdist(self.positions))
-        adjacency_matrix = distance_matrix < self.radius
+        adjacency_matrix = distance_matrix <= self.radius
 
         # Average over current headings of particles within radius
         headings_matrix = np.ma.array(
             np.broadcast_to(self.headings, (self.particles, self.particles)),
             mask=~adjacency_matrix,
         )
-        sum_of_sines = (self.weights * np.sin(headings_matrix)).sum(axis=1)
-        sum_of_cosines = (self.weights * np.cos(headings_matrix)).sum(axis=1)
+
+        sum_of_sines = (self.leader_weights * np.sin(headings_matrix)).sum(axis=1)
+        sum_of_cosines = (self.leader_weights * np.cos(headings_matrix)).sum(axis=1)
 
         # Set new headings
         self._headings = (
-            np.arctan2(sum_of_sines, sum_of_cosines)  # interactions
-            + (self._rng.random(self.particles) - 0.5) * self.noise  # noise
-        )
+            self.headings * self.memory_weights +  # self memory
+            np.arctan2(sum_of_sines, sum_of_cosines) * self.follower_weights +  # interactions
+            (self._rng.random(self.particles) * 2 * np.pi) * self.noise) / (
+            # (self._rng.random(self.particles) - 0.5) * self.noise) / (
+            self.memory_weights + self.follower_weights + self.noise)
+
+        print(f"headings: \n {self._headings}")
 
         # Step forward particles
         self._positions += np.expand_dims(self.speed, 1) * np.stack(
@@ -321,7 +364,7 @@ class VicsekModel:
             linewidth=2,
         )
 
-    def view(self, annotate=True) -> plt.figure:
+    def view(self, annotate=True, point_annotate=True) -> plt.figure:
         """Visualise the current state of the system using quivers.
 
         Parameters
@@ -338,7 +381,8 @@ class VicsekModel:
         fig, ax = plt.subplots()
 
         # Hide axes and make figure square (L, L)
-        ax.set_axis_off()
+        # ax.set_axis_off()
+        ax.grid()
         ax.set_aspect("equal")
 
         # Add a box
@@ -351,6 +395,17 @@ class VicsekModel:
             self.velocities[:, 0],
             self.velocities[:, 1],
         )
+        weights_params = list(zip(range(len(self.positions)), self.leader_weights, self.follower_weights, self.memory_weights))
+        leader_max_idx = np.argmax(self.leader_weights)
+        follower_max_idx = np.argmax(self.follower_weights)
+        for i, pos in enumerate(self.positions):
+            if point_annotate:
+                ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8)
+            if i == leader_max_idx:
+                ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='b')
+            if i == follower_max_idx:
+                ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='g')
+
         if annotate:
             ax.annotate(
                 f"OP = {self.order_parameter:1.2f}",
