@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
+import pandas as pd
 
 log = logging.getLogger(__name__)
 
@@ -273,9 +274,13 @@ class VicsekModel:
         # constructions is not necessary.
         return self._trajectory
 
+
     # --------------------------------------------------------------------------------
     #                                                               | Public methods |
     #                                                               ------------------
+
+    def frames_dfs(self) -> list:
+        return self._frames_dfs
 
     def init_state(self, seed: Union[int, None] = None):
         """Initialises the model by randomly generating positions and headings.
@@ -296,6 +301,9 @@ class VicsekModel:
 
         self._reset_flag = True
 
+        self._frames_dfs = []
+        self.update_state_dfs()
+
     def step(self):
         """Performs a single step for all particles."""
         # Generate adjacency matrix - true if separation less than radius
@@ -308,8 +316,8 @@ class VicsekModel:
             mask=~adjacency_matrix,
         )
 
-        sum_of_sines = (self.leader_weights * np.sin(headings_matrix)).sum(axis=1)
-        sum_of_cosines = (self.leader_weights * np.cos(headings_matrix)).sum(axis=1)
+        sum_of_sines = (self.leader_weights * np.sin(headings_matrix)).sum(axis=1) / self.leader_weights.sum()
+        sum_of_cosines = (self.leader_weights * np.cos(headings_matrix)).sum(axis=1) / self.leader_weights.sum()
 
         # Set new headings
         self._headings = (
@@ -319,7 +327,7 @@ class VicsekModel:
             # (self._rng.random(self.particles) - 0.5) * self.noise) / (
             self.memory_weights + self.follower_weights + self.noise)
 
-        print(f"headings: \n {self._headings}")
+        # print(f"headings: \n {self._headings}")
 
         # Step forward particles
         self._positions += np.expand_dims(self.speed, 1) * np.stack(
@@ -327,11 +335,21 @@ class VicsekModel:
             axis=1,
         )
 
+        # Update step counter
+        self._current_step += 1
+
+        # save current state
+        self.update_state_dfs()
+
         # Check for wrapping around the periodic boundaries
         np.mod(self._positions, self.length, out=self._positions)
 
-        # Update step counter
-        self._current_step += 1
+    def update_state_dfs(self):
+        state_df = pd.DataFrame(self._positions, columns=['x', 'y'])
+        state_df['heading'] = self._headings
+        state_df['frame_no'] = self._current_step
+        state_df = state_df.reset_index().rename(columns={'index': 'cell_id'}).set_index(['frame_no', 'cell_id'])
+        self._frames_dfs.append(state_df)
 
     def evolve(
         self,
@@ -397,13 +415,18 @@ class VicsekModel:
         )
         weights_params = list(zip(range(len(self.positions)), self.leader_weights, self.follower_weights, self.memory_weights))
         leader_max_idx = np.argmax(self.leader_weights)
+        leaders_idx = self.leader_weights > 0
         follower_max_idx = np.argmax(self.follower_weights)
         for i, pos in enumerate(self.positions):
             if point_annotate:
                 ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8)
-            if i == leader_max_idx:
+            # if i == leader_max_idx:
+            #     ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='b')
+            # if i == follower_max_idx:
+            #     ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='g')
+            if weights_params[i][1] > 0:
                 ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='b')
-            if i == follower_max_idx:
+            if weights_params[i][2] > 0:
                 ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='g')
 
         if annotate:

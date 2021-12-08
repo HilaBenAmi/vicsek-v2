@@ -4,6 +4,7 @@ from vicsek.model import VicsekModel
 from vicsek.visualize import ParticlesAnimation
 from matplotlib import pyplot as plt
 from tqdm import tqdm
+import pandas as pd
 
 FNAME = "animation"
 ts = datetime.now().strftime('%d-%m-%y_%H%M')
@@ -23,30 +24,44 @@ def run_vic_ani(outpath, model_params: {}):
     animation.save(f'{outpath}/{FNAME}_{ts}.gif')
 
 
-def run_vic_snap(outpath, model_params: {}, steps=1, frames=100):
-    try:
-        os.mkdir(outpath)
-    except FileExistsError:
-        pass
+def run_vic_snap(outpath, model_params: {}, steps=1, frames=100, suffix_folder=''):
+    nested_path = f"{outpath}/{ts}{suffix_folder}/"
+    for p in [outpath, nested_path]:
+        try:
+            os.mkdir(p)
+        except FileExistsError:
+            pass
+    model_params_copy = model_params.copy()
+    model_params_copy.update({'frames': frames})
+    save_configuration(nested_path, model_params_copy)
 
     model = VicsekModel(**model_params)
     n = len(str(steps * frames))
 
     # Save initial config
     fig = model.view()
-    fig.savefig(f"{outpath}/snap_{ts}.png")
+    fig.savefig(f"{nested_path}/snap_{ts}.png")
     plt.close(fig)
 
-    # pbar = tqdm(range(frames))
-    pbar = range(frames)
+    pbar = tqdm(range(frames))
+    # pbar = range(frames)
     for i in pbar:
         model.evolve(steps=steps)
         fig = model.view(point_annotate=False)
-        fig.savefig(f"{outpath}/snap_{str(model.current_step).zfill(n)}.jpg")
+        fig.savefig(f"{nested_path}/snap_{str(model.current_step).zfill(n)}.jpg")
         plt.close(fig)
 
-    # pbar.close()
-    create_video(outpath)
+    pbar.close()
+    create_video(nested_path)
+
+    simulation_positions_df = pd.concat(model.frames_dfs())
+    simulation_positions_df.to_csv(f"{nested_path}/frames_dfs_{ts}.csv")
+
+
+def save_configuration(outpath, model_params):
+    import json
+    with open(f'{outpath}/simulation_params_{ts}.json', 'w') as f:
+        json.dump(model_params, f, indent=2)
 
 
 def create_video(file_path):
@@ -74,27 +89,41 @@ def create_video(file_path):
     out.release()
 
 
+def create_outputs(particles_coords_list, folder_path):
+    coords_dfs_list = []
+    for cell_idx, cell_coords in particles_coords_list.items():
+        coords_dfs_list.append(pd.DataFrame(cell_coords, columns=[f'x_{cell_idx}',
+                                                                  f'y_{cell_idx}',
+                                                                  f't_{cell_idx}']))
+    full_coords_df = pd.concat(coords_dfs_list, axis=1)
+    csv_path = f'{folder_path}\\all_cells_coords_df.csv'
+    full_coords_df.to_csv(csv_path)
+    create_video(folder_path)
+    return csv_path
+
+
 if __name__ == "__main__":
     path = os.getcwd()
-    output_path = f'{path}\\examples\\021121'
+    output_path = f'{path}\\examples\\081221'
     # run_vic_ani(output_path,
     #             {"length": 10,
     #              "density": 0.05,
     #              "speed": 0.2,
     #              "noise": 1,
     #              "radius": 5,
-    #              "leader_weights": [100, 1],
+    #              "leader_weights": [100, 1] ,
     #              "follower_weights": [1, 100],
     #              "memory_weights": [1],
     #              "seed": 1234})
 
-    run_vic_snap(output_path,
-                {"length": 10,
-                 "density": 0.05,  # how many cells in one unit
-                 "speed": 0.2,  # pixels per frame
-                 "noise": 2,
-                 "radius": 2,  # the radius in pixels to determine neighbors
-                 "leader_weights": [8, 0],
-                 "follower_weights": [0, 8],
-                 "memory_weights": [4],
-                 "seed": 12235}, frames=100)
+    for leader_weight in range(1,30):
+        params = {"length": 10,
+                     "density": 0.1,  # how many cells in one unit
+                     "speed": 0.2,  # pixels per frame
+                     "noise": 1,
+                     "radius": 100,  # the radius in pixels to determine neighbors
+                     "leader_weights": [leader_weight, 0],  # fill the gap with the right value
+                     "follower_weights": [0,0,0,0,0,0,0,0,0,15], # from right to left
+                     "memory_weights": [1],
+                     "seed": 12236}
+        run_vic_snap(output_path, params, suffix_folder=f'_leader_{leader_weight}')
