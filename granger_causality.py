@@ -86,39 +86,35 @@ def adf_test(feature_series):
     return result[1]
 
 
-def stationary_test(df, features):
-    stationary_results_combo = {}
-    for col in features:
-        stationary_results_combo[col] = []
-    stationary_results_combo['total'] = len(df['cell_id'].unique()) * [True]
-    for cell_id in df['cell_id'].unique():
-        # print(f"** start test stationary - cell_id: {cell_id} **")
-        cell_trajectory = df[df['cell_id'] == cell_id].copy().reset_index(drop=True)
-        cell_trajectory['dx'] = cell_trajectory['x'].diff()
-        cell_trajectory['dy'] = cell_trajectory['y'].diff()
-        cell_trajectory = cell_trajectory.drop(columns=['x', 'y'])
-        cell_trajectory = cell_trajectory.dropna().reset_index(drop=True)
-        for col in features:
-            p_value_adf = adf_test(cell_trajectory[col])
-            p_value_kpss = kpss_test(cell_trajectory[col])
-            stationary_results_combo[col].append(True if p_value_adf <= 0.05 and p_value_kpss >= 0.05 else False)
-            stationary_results_combo['total'] = stationary_results_combo['total'] and \
-                                                stationary_results_combo[col]
-    stat_indexes = np.where(stationary_results_combo['total'])[0]
-    return stat_indexes
+def stationary_test(df, cell_id):
+    # print(f"** start test stationary - cell_id: {cell_id} **")
+    cell_trajectory = df[df['cell_id'] == cell_id].copy().reset_index(drop=True)
+    cell_trajectory['dx'] = cell_trajectory['x'].diff()
+    cell_trajectory['dy'] = cell_trajectory['y'].diff()
+    cell_trajectory = cell_trajectory.drop(columns=['x', 'y'])
+    cell_trajectory = cell_trajectory.dropna().reset_index(drop=True)
+    is_stat_per_feature = []
+    for col in ['dx', 'dy']:
+        p_value_adf = adf_test(cell_trajectory[col])
+        p_value_kpss = kpss_test(cell_trajectory[col])
+        is_stat_per_feature.append(True if p_value_adf <= 0.05 and p_value_kpss >= 0.05 else False)
+    return all(is_stat_per_feature)
 
 
-def granger_causality_matrix_2(data, features, res_df, res_col, test='ssr_chi2test', maxlag=MAXLAG, verbose=False):
+def granger_causality_matrix(data, features, res_df, res_col, test='ssr_chi2test', maxlag=MAXLAG, verbose=False):
     """
         The row are the response (y) and the columns are the predictors (x)
         If a given p-value is < significance level (0.05), we can reject the null hypothesis and conclude that walmart_x Granger causes apple_y.
     """
     for col in features:
         print(f"** Start calculate GC on {col} **")
-        res_df[col].loc[:, int(res_col)] = np.nan
+        # res_df[col].loc[:, int(res_col)] = np.nan
         time_series_per_cell = {}
         feature_data = data[['frame_no', 'cell_id', col]].copy()
         for cell_id in feature_data['cell_id'].unique():
+            is_stat = stationary_test(data, cell_id)
+            if not is_stat:
+                continue
             time_series_per_cell[cell_id] = feature_data[feature_data['cell_id'] == cell_id].set_index('frame_no')[
                 col].diff()[1:]
         time_frame_df = pd.DataFrame(time_series_per_cell)
@@ -128,17 +124,26 @@ def granger_causality_matrix_2(data, features, res_df, res_col, test='ssr_chi2te
             model = VAR(pair_cells)
             lags_results = model.select_order(MAXLAG)
             lags = [lags_results.aic, lags_results.bic]
+            if np.min(lags) > 0:
+                print(f"**{p}-{r} got zero as the optimal lag")
             opt_lag = np.max([np.min(lags), 1])
             gc_result = grangercausalitytests(time_frame_df[[r, p]], maxlag=opt_lag, verbose=verbose)
             p_value = gc_result[opt_lag][0][test][1]
-            res_df[col].loc[(p, r), res_col] = p_value
+            res_df[col].loc[(p, r), int(res_col)] = p_value
     return res_df
 
 
 def run_pre_tests(df):
     col_test_list = ['dx', 'dy']
-    stationary_passed_indexes = stationary_test(df, features=col_test_list)
-    return stationary_passed_indexes
+    stationary_results_combo = {}
+    for col in col_test_list:
+        stationary_results_combo[col] = []
+    stationary_results_combo['total'] = len(df['cell_id'].unique()) * [True]
+    for cell_id in df['cell_id'].unique():
+        is_stat = stationary_test(df, cell_id)
+        stationary_results_combo['total'] = is_stat
+    stat_indexes = np.where(stationary_results_combo['total'])[0]
+    return stat_indexes
 
 
 def run(paths_list=None, top_folder='', all_process=True):
@@ -163,31 +168,33 @@ def run(paths_list=None, top_folder='', all_process=True):
             gc_df.drop(columns=['temp'], inplace=True)
             for col in set(df.columns) - set(['frame_no', 'cell_id']):
                 all_simulation_gc_df[col] = gc_df.copy()
-        if all_process:
-            stationary_passed_indexes = run_pre_tests(df)  ## todo filter un-stationary cells
-        granger_causality_matrix_2(df, features=set(df.columns) - set(['frame_no', 'cell_id']), maxlag=10,
+        granger_causality_matrix(df, features=set(df.columns) - set(['frame_no', 'cell_id']), maxlag=10,
                                    res_df=all_simulation_gc_df, res_col=weight_param)
     for col, df in all_simulation_gc_df.items():
         df.to_csv(f'{files_path}/gc_{col}.csv')
+        create_gc_heatmap(df, files_path, col)
 
-        fig, ax = plt.subplots(figsize=(70, 90))  # Sample figsize in inches
-        sns.heatmap(df, annot=True, ax=ax, linewidths=2)
 
-        ax.tick_params(axis='y', size=15, rotation=0, labelsize=40)
-        ax.tick_params(axis='x', size=15, labelsize=40)
-        plt.rc('font', size=30)  # controls default text sizes
-        plt.rc('legend', fontsize=30)  # legend fontsize
-        sns.heatmap(df, annot=True, ax=ax)
-        plt.savefig(f'{files_path}/gc_{col}.jpg')
+def create_gc_heatmap(df, files_path, col):
+    fig, ax = plt.subplots(figsize=(70, 90))  # Sample figsize in inches
+    plt.rc('font', size=25)  # controls default text sizes
+    plt.rc('legend', fontsize=30)  # legend fontsize
+    plt.ylabel('cells pairs', fontsize=30)
+    plt.xlabel('follower weight', fontsize=30)
+    sns.heatmap(df, annot=True, ax=ax)
+    ax.tick_params(axis='y', size=15, rotation=0, labelsize=30)
+    ax.tick_params(axis='x', size=15, labelsize=30)
+    plt.savefig(f'{files_path}/gc_{col}.jpg')
 
 
 if __name__ == '__main__':
-    # path = 'C:\\Users\\hilon\\OneDrive - post.bgu.ac.il\\תואר שני\\master\\vicsek-v2\\examples\\081221'
-    # name = 'gc_x'
-    # df = pd.read_csv(f'{path}/{name}.csv', index_col=[0, 1])
+    path = 'C:\\Users\\hilon\\OneDrive - post.bgu.ac.il\\תואר שני\\master\\vicsek-v2\\examples\\111221'
+    name = 'gc_y'
+    df = pd.read_csv(f'{path}/{name}.csv', index_col=[0, 1])
+    create_gc_heatmap(df, path, name)
 
     # run(folder='011221/04-12-21_1302')
     # run_only_gc(folder='011221/04-12-21_1304')
     # run_only_gc(folder='301121/30-11-21_1718')
     # run(top_folder='temp', all_process=True)
-    run(top_folder='081221', all_process=True)
+    # run(top_folder='111221', all_process=False)
