@@ -316,6 +316,7 @@ class VicsekModel:
             mask=~adjacency_matrix,
         )
 
+        # TODO normalize with number of neighbors
         sum_of_sines = (self.leader_weights * np.sin(headings_matrix)).sum(axis=1) / self.leader_weights.sum()
         sum_of_cosines = (self.leader_weights * np.cos(headings_matrix)).sum(axis=1) / self.leader_weights.sum()
 
@@ -329,7 +330,11 @@ class VicsekModel:
 
         # print(f"headings: \n {self._headings}")
 
-        # Step forward particles
+        # Step forward particles TODO change the speed in time, only x
+        # self._positions += np.stack((self.speed+self.current_step/10, self.speed), axis=1) * np.stack(
+        #     (np.cos(self.headings), np.sin(self.headings)),
+        #     axis=1,
+        # )
         self._positions += np.expand_dims(self.speed, 1) * np.stack(
             (np.cos(self.headings), np.sin(self.headings)),
             axis=1,
@@ -342,7 +347,7 @@ class VicsekModel:
         self.update_state_dfs()
 
         # Check for wrapping around the periodic boundaries
-        np.mod(self._positions, self.length, out=self._positions)
+        # np.mod(self._positions, self.length, out=self._positions) TODO remove the boundaries condition
 
     def update_state_dfs(self):
         state_df = pd.DataFrame(self._positions, columns=['x', 'y'])

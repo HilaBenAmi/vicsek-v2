@@ -104,26 +104,38 @@ def create_outputs(particles_coords_list, folder_path):
 
 if __name__ == "__main__":
     path = os.getcwd()
-    output_path = f'{path}\\examples\\081221'
-    # run_vic_ani(output_path,
+    output_path = f'{path}\\examples\\26022022_leader_no_boundaries'
+    # run_vic_snap(output_path,
     #             {"length": 10,
-    #              "density": 0.05,
+    #              "density": 0.02,
     #              "speed": 0.2,
     #              "noise": 1,
-    #              "radius": 5,
-    #              "leader_weights": [100, 1] ,
+    #              "radius": 10,
+    #              "leader_weights": [100, 1],
     #              "follower_weights": [1, 100],
     #              "memory_weights": [1],
-    #              "seed": 1234})
+    #              "seed": 1236}, frames=20)
 
-    for leader_weight in range(1,30):
+    # for follower_weight in range(1,12):
+    #     params = {"length": 10,
+    #                  "density": 0.1,  # how many cells in one unit
+    #                  "speed": 0.2,  # pixels per frame
+    #                  "noise": 0,
+    #                  "radius": 100,  # the radius in pixels to determine neighbors
+    #                  "leader_weights": [15, 0],  # fill the gap with the right value
+    #                  "follower_weights": [0,0,0,0,0,0,0,0,0,follower_weight], # from right to left
+    #                  "memory_weights": [1],
+    #                  "seed": 12236}
+    #     run_vic_snap(output_path, params, suffix_folder=f'_follower_{follower_weight}')
+
+    for leader_weight in range(1,2):
         params = {"length": 10,
                      "density": 0.1,  # how many cells in one unit
                      "speed": 0.2,  # pixels per frame
-                     "noise": 1,
+                     "noise": [0.3, 0],
                      "radius": 100,  # the radius in pixels to determine neighbors
                      "leader_weights": [leader_weight, 0],  # fill the gap with the right value
-                     "follower_weights": [0,0,0,0,0,0,0,0,0,15], # from right to left
+                     "follower_weights": [0,0,0,0,0,0,0,0,0,15], # fro right to left
                      "memory_weights": [1],
                      "seed": 12236}
-        run_vic_snap(output_path, params, suffix_folder=f'_leader_{leader_weight}')
+        run_vic_snap(output_path, params, suffix_folder=f'_leader_{leader_weight}_leader_noise')

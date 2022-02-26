@@ -119,14 +119,24 @@ def granger_causality_matrix(data, features, res_df, res_col, test='ssr_chi2test
                 col].diff()[1:]
         time_frame_df = pd.DataFrame(time_series_per_cell)
         for p, r in res_df[col].index:
+            if p not in time_frame_df or r not in time_frame_df:
+                continue
             pair_cells = time_frame_df[[r, p]]
-
             model = VAR(pair_cells)
-            lags_results = model.select_order(MAXLAG)
+            adjusted_lag = maxlag
+            while True:
+                try:
+                    lags_results = model.select_order(adjusted_lag)
+                    break
+                except np.linalg.LinAlgError as err:
+                    adjusted_lag -= 1
             lags = [lags_results.aic, lags_results.bic]
-            if np.min(lags) > 0:
-                print(f"**{p}-{r} got zero as the optimal lag")
-            opt_lag = np.max([np.min(lags), 1])
+            opt_lag = np.min(lags)
+            ## if the minimum is 0, the maximum will be taken. if it also 0, 1 will be taken.
+            if opt_lag == 0:
+                opt_lag = np.max([np.max(lags), 1])  ## TODO change the 1
+                if np.max(lags) == 0:
+                    print(f"both lags are 0; 1 will be taken")
             gc_result = grangercausalitytests(time_frame_df[[r, p]], maxlag=opt_lag, verbose=verbose)
             p_value = gc_result[opt_lag][0][test][1]
             res_df[col].loc[(p, r), int(res_col)] = p_value
@@ -168,7 +178,7 @@ def run(paths_list=None, top_folder='', all_process=True):
             gc_df.drop(columns=['temp'], inplace=True)
             for col in set(df.columns) - set(['frame_no', 'cell_id']):
                 all_simulation_gc_df[col] = gc_df.copy()
-        granger_causality_matrix(df, features=set(df.columns) - set(['frame_no', 'cell_id']), maxlag=10,
+        granger_causality_matrix(df, features=set(df.columns) - set(['frame_no', 'cell_id']), maxlag=15,
                                    res_df=all_simulation_gc_df, res_col=weight_param)
     for col, df in all_simulation_gc_df.items():
         df.to_csv(f'{files_path}/gc_{col}.csv')
@@ -188,13 +198,13 @@ def create_gc_heatmap(df, files_path, col):
 
 
 if __name__ == '__main__':
-    path = 'C:\\Users\\hilon\\OneDrive - post.bgu.ac.il\\תואר שני\\master\\vicsek-v2\\examples\\111221'
-    name = 'gc_y'
-    df = pd.read_csv(f'{path}/{name}.csv', index_col=[0, 1])
-    create_gc_heatmap(df, path, name)
+    # path = 'C:\\Users\\hilon\\OneDrive - post.bgu.ac.il\\תואר שני\\master\\vicsek-v2\\examples\\111221'
+    # name = 'gc_y'
+    # df = pd.read_csv(f'{path}/{name}.csv', index_col=[0, 1])
+    # create_gc_heatmap(df, path, name)
 
     # run(folder='011221/04-12-21_1302')
     # run_only_gc(folder='011221/04-12-21_1304')
     # run_only_gc(folder='301121/30-11-21_1718')
     # run(top_folder='temp', all_process=True)
-    # run(top_folder='111221', all_process=False)
+    run(top_folder='26022022_leader_no_boundaries/26-02-22_1419_leader_1_leader_noise_10', all_process=False)
