@@ -86,9 +86,9 @@ def adf_test(feature_series):
     return result[1]
 
 
-def stationary_test(df, cell_id):
+def stationary_test(df, cell_id, warm_up_window):
     # print(f"** start test stationary - cell_id: {cell_id} **")
-    cell_trajectory = df[df['cell_id'] == cell_id].copy().reset_index(drop=True)
+    cell_trajectory = df[df['cell_id'] == cell_id].iloc[warm_up_window:].copy().reset_index(drop=True)
     cell_trajectory['dx'] = cell_trajectory['x'].diff()
     cell_trajectory['dy'] = cell_trajectory['y'].diff()
     cell_trajectory = cell_trajectory.drop(columns=['x', 'y'])
@@ -97,11 +97,13 @@ def stationary_test(df, cell_id):
     for col in ['dx', 'dy']:
         p_value_adf = adf_test(cell_trajectory[col])
         p_value_kpss = kpss_test(cell_trajectory[col])
-        is_stat_per_feature.append(True if p_value_adf <= 0.05 and p_value_kpss >= 0.05 else False)
+        is_stat_per_feature.append(True if p_value_adf <= 0.05 or p_value_kpss >= 0.05 else False)
+    # cell_trajectory.to_csv(f'./stat_files/{all(is_stat_per_feature)}_stat_cell_{cell_id}.csv')
     return all(is_stat_per_feature)
 
 
-def granger_causality_matrix(data, features, res_df, res_col, test='ssr_chi2test', maxlag=MAXLAG, verbose=False):
+def granger_causality_matrix(data, features, res_df, res_col, test='ssr_chi2test', maxlag=MAXLAG, verbose=False,
+                             warm_up_window=0):
     """
         The row are the response (y) and the columns are the predictors (x)
         If a given p-value is < significance level (0.05), we can reject the null hypothesis and conclude that walmart_x Granger causes apple_y.
@@ -112,11 +114,11 @@ def granger_causality_matrix(data, features, res_df, res_col, test='ssr_chi2test
         time_series_per_cell = {}
         feature_data = data[['frame_no', 'cell_id', col]].copy()
         for cell_id in feature_data['cell_id'].unique():
-            is_stat = stationary_test(data, cell_id)
+            is_stat = stationary_test(data, cell_id, warm_up_window)
             if not is_stat:
                 continue
-            time_series_per_cell[cell_id] = feature_data[feature_data['cell_id'] == cell_id].set_index('frame_no')[
-                col].diff()[1:]
+            time_series_per_cell[cell_id] = feature_data[feature_data['cell_id'] == cell_id].iloc[
+                                            warm_up_window:].set_index('frame_no')[col].diff()[1:]
         time_frame_df = pd.DataFrame(time_series_per_cell)
         for p, r in res_df[col].index:
             if p not in time_frame_df or r not in time_frame_df:
@@ -156,7 +158,7 @@ def run_pre_tests(df):
     return stat_indexes
 
 
-def run(paths_list=None, top_folder='', all_process=True):
+def run(paths_list=None, top_folder='', warm_up_window=0):
     all_simulation_gc_df = {}
     if paths_list is None:
         root_path = 'C:/Users/hilon/OneDrive - post.bgu.ac.il/תואר שני/master/vicsek-v2/examples'
@@ -179,7 +181,7 @@ def run(paths_list=None, top_folder='', all_process=True):
             for col in set(df.columns) - set(['frame_no', 'cell_id']):
                 all_simulation_gc_df[col] = gc_df.copy()
         granger_causality_matrix(df, features=set(df.columns) - set(['frame_no', 'cell_id']), maxlag=15,
-                                   res_df=all_simulation_gc_df, res_col=weight_param)
+                                   res_df=all_simulation_gc_df, res_col=weight_param, warm_up_window=warm_up_window)
     for col, df in all_simulation_gc_df.items():
         df.to_csv(f'{files_path}/gc_{col}.csv')
         create_gc_heatmap(df, files_path, col)
@@ -206,5 +208,5 @@ if __name__ == '__main__':
     # run(folder='011221/04-12-21_1302')
     # run_only_gc(folder='011221/04-12-21_1304')
     # run_only_gc(folder='301121/30-11-21_1718')
-    # run(top_folder='temp', all_process=True)
-    run(top_folder='26022022_leader_no_boundaries/26-02-22_1419_leader_1_leader_noise_10', all_process=False)
+    # run(top_folder='temp')
+    run(top_folder='01032022/01-03-22_1240_random_avg_270_4', warm_up_window=0)

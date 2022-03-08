@@ -317,16 +317,24 @@ class VicsekModel:
         )
 
         # TODO normalize with number of neighbors
+        neighbors_count = adjacency_matrix.sum(axis=1)
+        affected_leaders = ((self.leader_weights * headings_matrix) != 0).sum(axis=1)
+        neighbors_leaders_ratio = affected_leaders / neighbors_count
+        mask_neighbors_leaders_ratio = np.array(neighbors_leaders_ratio != 0, dtype=int)  ## TODO remove
+
         sum_of_sines = (self.leader_weights * np.sin(headings_matrix)).sum(axis=1) / self.leader_weights.sum()
         sum_of_cosines = (self.leader_weights * np.cos(headings_matrix)).sum(axis=1) / self.leader_weights.sum()
 
+        # noise_vector = self._rng.random(self.particles) * 2 * np.pi
+        noise_vector = np.random.uniform(0, 2*np.pi, self.particles)
+        # print(noise_vector)
         # Set new headings
         self._headings = (
             self.headings * self.memory_weights +  # self memory
-            np.arctan2(sum_of_sines, sum_of_cosines) * self.follower_weights +  # interactions
-            (self._rng.random(self.particles) * 2 * np.pi) * self.noise) / (
+            np.arctan2(sum_of_sines, sum_of_cosines) * self.follower_weights * mask_neighbors_leaders_ratio +  # interactions
+            noise_vector * self.noise) / (
             # (self._rng.random(self.particles) - 0.5) * self.noise) / (
-            self.memory_weights + self.follower_weights + self.noise)
+            self.memory_weights + self.follower_weights * mask_neighbors_leaders_ratio + self.noise)
 
         # print(f"headings: \n {self._headings}")
 
@@ -425,14 +433,14 @@ class VicsekModel:
         for i, pos in enumerate(self.positions):
             if point_annotate:
                 ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8)
-            # if i == leader_max_idx:
-            #     ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='b')
-            # if i == follower_max_idx:
-            #     ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='g')
-            if weights_params[i][1] > 0:
+            if i == leader_max_idx:
                 ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='b')
-            if weights_params[i][2] > 0:
+            if i == follower_max_idx:
                 ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='g')
+            # if weights_params[i][1] > 0:
+            #     ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='b')
+            # if weights_params[i][2] > 0:
+            #     ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='g')
 
         if annotate:
             ax.annotate(
