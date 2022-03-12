@@ -329,16 +329,18 @@ class VicsekModel:
         # noise_vector = self._rng.random(self.particles) * 2 * np.pi
         # noise_vector = np.random.uniform(0, 2*np.pi, self.particles)
 
-        ## noise is sampling from von mise distribution
+        ## noise is sampling from von mise distribution - RW
         kappa = 4  ## as kappa increases, the distribution approaches a normal distribution in x  with mean μ and variance 1/kappa (wikipedia).
         r = vonmises.rvs(kappa, size=self.particles)
         noise_vector = r * 2 * np.pi
+        ## correlated random walk - CRW
+        correlated_noise_vector = (noise_vector + self._headings) % (2 * np.pi)
 
         # Set new headings
         self._headings = (
             self.headings * self.memory_weights +  # self memory
             np.arctan2(sum_of_sines, sum_of_cosines) * self.follower_weights * mask_neighbors_leaders_ratio +  # interactions
-            noise_vector * self.noise) / (
+            correlated_noise_vector * self.noise) / (
             # (self._rng.random(self.particles) - 0.5) * self.noise) / (
             self.memory_weights + self.follower_weights * mask_neighbors_leaders_ratio + self.noise)
 
