@@ -5,6 +5,7 @@ from vicsek.visualize import ParticlesAnimation
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 import pandas as pd
+import numpy as np
 
 FNAME = "animation"
 ts = datetime.now().strftime('%d-%m-%y_%H%M')
@@ -107,17 +108,17 @@ def create_outputs(particles_coords_list, folder_path):
 
 if __name__ == "__main__":
     path = os.getcwd()
-    output_path = f'{path}\\examples\\02032022_50_cells'
+    output_path = f'{path}\\examples\\12032022_von_mise_noise'
     run_vic_snap(output_path,
                 {"length": 10,
-                 "density": 0.5,
-                 "speed": 0.1,
-                 "noise": [0.3, 0.1],
+                 "density": 0.1,
+                 "speed": 0.2,
+                 "noise": [0.3, 0.2],
                  "radius": 10,
                  "leader_weights": [1, 0],
-                 "follower_weights": [0, 0.8, 0.4],
+                 "follower_weights": [0, 0.8, 0.3],
                  "memory_weights": [0.7, 0.1, 0.5],
-                 "seed": 144336}, frames=200, suffix_folder=f'_0.4_follow_with_noise_1', run_gc=False)
+                 "seed": 144336}, frames=200, suffix_folder=f'_von_mise_noise_CRW_1', run_gc=True)
 
     # for follower_weight in range(1,12):
     #     params = {"length": 10,
@@ -131,14 +132,33 @@ if __name__ == "__main__":
     #                  "seed": 12236}
     #     run_vic_snap(output_path, params, suffix_folder=f'_follower_{follower_weight}')
 
-    # for leader_weight in range(1,2):
+    # for weight in range(1, 10):
+    #     leader_weight = weight / 10
+    #     leader_noise = (1-leader_weight)/3
+    #     leader_memory = (1-leader_weight)*2/3
     #     params = {"length": 10,
     #                  "density": 0.1,  # how many cells in one unit
     #                  "speed": 0.2,  # pixels per frame
-    #                  "noise": [0.3, 0],
-    #                  "radius": 100,  # the radius in pixels to determine neighbors
+    #                  "noise": [leader_noise, 0],
+    #                  "radius": 10,  # the radius in pixels to determine neighbors
     #                  "leader_weights": [leader_weight, 0],  # fill the gap with the right value
-    #                  "follower_weights": [0,0,0,0,0,0,0,0,0,15], # fro right to left
-    #                  "memory_weights": [1],
+    #                  "follower_weights": [0, 0.5, 0],  # from right to left
+    #                  "memory_weights": [leader_memory, 0.5, 1],
     #                  "seed": 12236}
-    #     run_vic_snap(output_path, params, suffix_folder=f'_leader_{leader_weight}_leader_noise')
+    #     run_vic_snap(output_path, params, suffix_folder=f'_leader_weight_{weight}', frames=200)
+
+
+    # for weight in range(1, 10):
+    #     follower_weight = weight / 10
+    #     follower_noise = np.round((1-follower_weight)/3, 2)
+    #     follower_memory = np.round((1-follower_weight)*2/3, 2)
+    #     params = {"length": 10,
+    #                  "density": 0.1,  # how many cells in one unit
+    #                  "speed": 0.2,  # pixels per frame
+    #                  "noise": [0.2, 0],
+    #                  "radius": 30,  # the radius in pixels to determine neighbors
+    #                  "leader_weights": [0.6, 0],  # fill the gap with the right value
+    #                  "follower_weights": [0, follower_weight, 0.3],  # from right to left
+    #                  "memory_weights": [0.2, 1-follower_weight, 0.7],
+    #                  "seed": 12236}
+    #     run_vic_snap(output_path, params, suffix_folder=f'_follower_weight_{weight}', frames=200)

@@ -136,6 +136,7 @@ def granger_causality_matrix(data, features, res_df, res_col, test='ssr_chi2test
             opt_lag = np.min(lags)
             ## if the minimum is 0, the maximum will be taken. if it also 0, 1 will be taken.
             if opt_lag == 0:
+                print(f"at least one if the metrics yield lag 0")
                 opt_lag = np.max([np.max(lags), 1])  ## TODO change the 1
                 if np.max(lags) == 0:
                     print(f"both lags are 0; 1 will be taken")
@@ -209,4 +210,4 @@ if __name__ == '__main__':
     # run_only_gc(folder='011221/04-12-21_1304')
     # run_only_gc(folder='301121/30-11-21_1718')
     # run(top_folder='temp')
-    run(top_folder='01032022/01-03-22_1240_random_avg_270_4', warm_up_window=0)
+    run(top_folder='09032022_all_follower_experiment_2', warm_up_window=0)

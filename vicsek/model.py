@@ -8,6 +8,7 @@ from matplotlib.patches import Rectangle
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
 import pandas as pd
+from scipy.stats import vonmises
 
 log = logging.getLogger(__name__)
 
@@ -326,8 +327,13 @@ class VicsekModel:
         sum_of_cosines = (self.leader_weights * np.cos(headings_matrix)).sum(axis=1) / self.leader_weights.sum()
 
         # noise_vector = self._rng.random(self.particles) * 2 * np.pi
-        noise_vector = np.random.uniform(0, 2*np.pi, self.particles)
-        # print(noise_vector)
+        # noise_vector = np.random.uniform(0, 2*np.pi, self.particles)
+
+        ## noise is sampling from von mise distribution
+        kappa = 4  ## as kappa increases, the distribution approaches a normal distribution in x  with mean μ and variance 1/kappa (wikipedia).
+        r = vonmises.rvs(kappa, size=self.particles)
+        noise_vector = r * 2 * np.pi
+
         # Set new headings
         self._headings = (
             self.headings * self.memory_weights +  # self memory
@@ -426,7 +432,7 @@ class VicsekModel:
             self.velocities[:, 0],
             self.velocities[:, 1],
         )
-        weights_params = list(zip(range(len(self.positions)), self.leader_weights, self.follower_weights, self.memory_weights))
+        weights_params = list(zip(range(len(self.positions)), self.leader_weights, self.follower_weights, self.memory_weights, self.noise))
         leader_max_idx = np.argmax(self.leader_weights)
         leaders_idx = self.leader_weights > 0
         follower_max_idx = np.argmax(self.follower_weights)
