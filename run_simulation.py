@@ -25,7 +25,7 @@ def run_vic_ani(outpath, model_params: {}):
     animation.save(f'{outpath}/{FNAME}_{ts}.gif')
 
 
-def run_vic_snap(outpath, model_params: {}, steps=1, frames=100, suffix_folder='', run_gc=False):
+def run_vic_snap(outpath, model_params: {}, steps=1, frames=100, suffix_folder='', run_gc=False, separate_outputs=False):
     nested_path = f"{outpath}/{ts}{suffix_folder}/"
     for p in [outpath, nested_path]:
         try:
@@ -59,7 +59,7 @@ def run_vic_snap(outpath, model_params: {}, steps=1, frames=100, suffix_folder='
     simulation_positions_df.to_csv(f"{nested_path}/frames_dfs_{ts}.csv")
     if run_gc:
         from granger_causality import run
-        run(top_folder=nested_path)
+        run(top_folder=nested_path, separate_outputs=separate_outputs)
 
 
 def save_configuration(outpath, model_params):
@@ -113,12 +113,13 @@ if __name__ == "__main__":
                 {"length": 10,
                  "density": 0.1,
                  "speed": 0.2,
-                 "noise": [0.3, 0.2],
+                 "noise": [0.3, 0.1, 0.4],
                  "radius": 10,
                  "leader_weights": [1, 0],
-                 "follower_weights": [0, 0.8, 0.3],
-                 "memory_weights": [0.7, 0.1, 0.5],
-                 "seed": 144336}, frames=200, suffix_folder=f'_von_mise_noise_CRW_1', run_gc=True)
+                 "follower_weights": [0, 0.8, 0],
+                 "memory_weights": [0.7, 0.1, 0.6],
+                 "rw_type": 'CRW',
+                 "seed": 144336}, frames=100, suffix_folder=f'_von_mise_noise_one_follower_CRW_100', run_gc=True, separate_outputs=True)
 
     # for follower_weight in range(1,12):
     #     params = {"length": 10,

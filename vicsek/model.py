@@ -106,6 +106,7 @@ class VicsekModel:
         leader_weights: ParticleProperty = 1,
         follower_weights: ParticleProperty = 1,
         memory_weights: ParticleProperty = 1,
+        rw_type='SRW',
         seed: Union[int, None] = None,
     ):
 
@@ -117,6 +118,7 @@ class VicsekModel:
         self.leader_weights = leader_weights
         self.follower_weights = follower_weights
         self.memory_weights = memory_weights
+        self.RW_type = rw_type
 
         self.init_state(seed=seed)
 
@@ -227,6 +229,15 @@ class VicsekModel:
             raise ValueError("The weights must be positive.")
         self._memory_weights = new
 
+    @property
+    def rw_type(self) -> str:
+        """The random walk method type. optional: simple-SRW or correlated-CRW"""
+        return self._rw_type
+
+    @rw_type.setter
+    def rw_type(self, new: str):
+        """Setter for rw_type. Also reinitialises state."""
+        self._rw_type = new
     # --------------------------------------------------------------------------------
     #                                                         | Read-only properties |
     #                                                         ------------------------
@@ -333,14 +344,16 @@ class VicsekModel:
         kappa = 4  ## as kappa increases, the distribution approaches a normal distribution in x  with mean μ and variance 1/kappa (wikipedia).
         r = vonmises.rvs(kappa, size=self.particles)
         noise_vector = r * 2 * np.pi
+
         ## correlated random walk - CRW
-        correlated_noise_vector = (noise_vector + self._headings) % (2 * np.pi)
+        if self.RW_type == 'CRW':
+            noise_vector = (noise_vector + self._headings) % (2 * np.pi)
 
         # Set new headings
         self._headings = (
             self.headings * self.memory_weights +  # self memory
             np.arctan2(sum_of_sines, sum_of_cosines) * self.follower_weights * mask_neighbors_leaders_ratio +  # interactions
-            correlated_noise_vector * self.noise) / (
+            noise_vector * self.noise) / (
             # (self._rng.random(self.particles) - 0.5) * self.noise) / (
             self.memory_weights + self.follower_weights * mask_neighbors_leaders_ratio + self.noise)
 
