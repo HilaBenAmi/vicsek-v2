@@ -9,6 +9,7 @@ import numpy as np
 from scipy.spatial.distance import pdist, squareform
 import pandas as pd
 from scipy.stats import vonmises
+import random
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +109,7 @@ class VicsekModel:
         memory_weights: ParticleProperty = 1,
         rw_type='SRW',
         seed: Union[int, None] = None,
+        center_start=False
     ):
 
         self.length = length
@@ -120,11 +122,22 @@ class VicsekModel:
         self.memory_weights = memory_weights
         self.RW_type = rw_type
 
-        self.init_state(seed=seed)
+        self.seed = seed
+        self.init_state(seed=seed, center_start=center_start)
 
     # --------------------------------------------------------------------------------
     #                                                             | Data descriptors |
     #                                                             --------------------
+
+    @property
+    def seed(self) -> int:
+        """The random state of the system."""
+        return self._seed
+
+    @seed.setter
+    def seed(self, new: int):
+        """Setter for seed. Also reinitialises state."""
+        self._seed = new
 
     @property
     def length(self) -> int:
@@ -294,7 +307,7 @@ class VicsekModel:
     def frames_dfs(self) -> list:
         return self._frames_dfs
 
-    def init_state(self, seed: Union[int, None] = None):
+    def init_state(self, seed: Union[int, None] = None, center_start=False):
         """Initialises the model by randomly generating positions and headings.
 
         Parameters
@@ -304,8 +317,13 @@ class VicsekModel:
             reproduce the evolution of the model.
         """
         self._rng = np.random.default_rng(seed)
+        np.random.seed(seed)
+        random.seed(seed)
 
-        self._positions = self._rng.random((self.particles, 2)) * self.length
+        if center_start:
+            self._positions = np.zeros((self.particles, 2), dtype=float)
+        else:
+            self._positions = self._rng.random((self.particles, 2)) * self.length
         self._headings = self._rng.random(size=self.particles) * 2 * np.pi
 
         self._current_step = 0
@@ -314,7 +332,15 @@ class VicsekModel:
         self._reset_flag = True
 
         self._frames_dfs = []
-        self.update_state_dfs()
+        self.update_state_dfs(None, None)
+
+    def calculate_plot_size(self, frames_no):
+        step_size = self.speed[0] * frames_no
+        self.x_max = self.positions[0].max() + step_size
+        self.x_min = self.positions[0].min() - step_size
+        self.y_max = self.positions[1].max() + step_size
+        self.y_min = self.positions[1].min() - step_size
+
 
     def step(self):
         """Performs a single step for all particles."""
@@ -341,7 +367,7 @@ class VicsekModel:
         # noise_vector = np.random.uniform(0, 2*np.pi, self.particles)
 
         ## noise is sampling from von mise distribution - RW
-        kappa = 4  ## as kappa increases, the distribution approaches a normal distribution in x  with mean μ and variance 1/kappa (wikipedia).
+        kappa = 10  ## as kappa increases, the distribution approaches a normal distribution in x  with mean μ and variance 1/kappa (wikipedia).
         r = vonmises.rvs(kappa, size=self.particles)
         noise_vector = r * 2 * np.pi
 
@@ -354,7 +380,6 @@ class VicsekModel:
             self.headings * self.memory_weights +  # self memory
             np.arctan2(sum_of_sines, sum_of_cosines) * self.follower_weights * mask_neighbors_leaders_ratio +  # interactions
             noise_vector * self.noise) / (
-            # (self._rng.random(self.particles) - 0.5) * self.noise) / (
             self.memory_weights + self.follower_weights * mask_neighbors_leaders_ratio + self.noise)
 
         # print(f"headings: \n {self._headings}")
@@ -373,14 +398,16 @@ class VicsekModel:
         self._current_step += 1
 
         # save current state
-        self.update_state_dfs()
+        self.update_state_dfs(r, noise_vector)
 
         # Check for wrapping around the periodic boundaries
         # np.mod(self._positions, self.length, out=self._positions) TODO remove the boundaries condition
 
-    def update_state_dfs(self):
+    def update_state_dfs(self, r, noise_vector):
         state_df = pd.DataFrame(self._positions, columns=['x', 'y'])
         state_df['heading'] = self._headings
+        state_df['von_mise'] = r
+        state_df['noise'] = noise_vector
         state_df['frame_no'] = self._current_step
         state_df = state_df.reset_index().rename(columns={'index': 'cell_id'}).set_index(['frame_no', 'cell_id'])
         self._frames_dfs.append(state_df)
@@ -406,11 +433,13 @@ class VicsekModel:
                 self._trajectory[self.current_step] = self.order_parameter
 
     def get_box(self) -> Rectangle:
+        x_center = self.x_min
+        y_center = self.y_min
         """Returns a Rectangle patch representing the box."""
         return Rectangle(
-            xy=(0, 0),
-            width=self.length,
-            height=self.length,
+            xy=(x_center, y_center),
+            width=self.x_max - self.x_min,
+            height=self.y_max - self.y_min,
             edgecolor="black",
             facecolor="none",
             linewidth=2,

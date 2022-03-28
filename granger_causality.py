@@ -22,7 +22,7 @@ TEST = 'ssr_chi2test'
 
 
 def load_file(path):
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, usecols=['frame_no', 'cell_id', 'x', 'y', 'heading'])
     sim_param_path = str(path).replace("frames_dfs", "simulation_params").replace("csv", "json")
     with open(sim_param_path, 'r') as f:
         sim_params_dict = json.load(f)
@@ -95,10 +95,11 @@ def stationary_test(df, cell_id, warm_up_window):
     cell_trajectory = df[df['cell_id'] == cell_id].iloc[warm_up_window:].copy().reset_index(drop=True)
     cell_trajectory['dx'] = cell_trajectory['x'].diff()
     cell_trajectory['dy'] = cell_trajectory['y'].diff()
-    cell_trajectory = cell_trajectory.drop(columns=['x', 'y'])
+    cell_trajectory['dh'] = cell_trajectory['heading'].diff()
+    cell_trajectory = cell_trajectory.drop(columns=['x', 'y', 'heading'])
     cell_trajectory = cell_trajectory.dropna().reset_index(drop=True)
     is_stat_per_feature = []
-    for col in ['dx', 'dy']:
+    for col in ['dx', 'dy', 'dh']:
         p_value_adf = adf_test(cell_trajectory[col])
         p_value_kpss = kpss_test(cell_trajectory[col])
         is_stat_per_feature.append(True if p_value_adf <= 0.05 or p_value_kpss >= 0.05 else False)
@@ -150,19 +151,6 @@ def granger_causality_matrix(data, features, res_df, res_col, test='ssr_chi2test
     return res_df
 
 
-def run_pre_tests(df):
-    col_test_list = ['dx', 'dy']
-    stationary_results_combo = {}
-    for col in col_test_list:
-        stationary_results_combo[col] = []
-    stationary_results_combo['total'] = len(df['cell_id'].unique()) * [True]
-    for cell_id in df['cell_id'].unique():
-        is_stat = stationary_test(df, cell_id)
-        stationary_results_combo['total'] = is_stat
-    stat_indexes = np.where(stationary_results_combo['total'])[0]
-    return stat_indexes
-
-
 def expand_weights_vector(weights_vector, num_of_cells):
     expanded_weights = np.full(num_of_cells - len(weights_vector), fill_value=weights_vector[-1], dtype=np.float64)
     expanded_weights = weights_vector + list(expanded_weights)
@@ -182,14 +170,6 @@ def extract_interacted_cells(sim_params_dict):
     followers_weights = sim_params_dict['follower_weights']
     followers_ids = expand_weights_vector(followers_weights, num_of_cells)
 
-    # leaders_weights = sim_params_dict['leader_weights']
-    # expanded_weights = np.full(num_of_cells-len(leaders_weights), fill_value=leaders_weights[-1], dtype=np.float64)
-    # expanded_weights = leaders_weights + list(expanded_weights)
-    # # np.concatenate((np.full(9, fill_value=6, dtype=np.float64), np.full(2, fill_value=6, dtype=np.float64)))
-    # leaders_ids = []
-    # for i, val in enumerate(expanded_weights):
-    #     if val > 0:
-    #         leaders_ids.append(str(num_of_cells-1-i))
     return leaders_ids, followers_ids
 
 
@@ -222,7 +202,7 @@ def run(paths_list=None, top_folder='', warm_up_window=0, separate_outputs=False
         print(f'start handling file no. {simulation_no}: {folder}/{filename}')
         weight_param = folder[folder.rindex('_') + 1:]
         df, sim_params_dict = load_file(path)
-        df = df.drop(columns=['heading'])
+        # df = df.drop(columns=['heading'])
         df['cell_id'] = df['cell_id'].astype(str)
         cell_ids = df['cell_id'].unique()
         if simulation_no == 0:
@@ -247,7 +227,7 @@ def create_gc_heatmap(df, output_path):
     plt.rc('legend', fontsize=30)  # legend fontsize
     plt.ylabel('cells pairs', fontsize=30)
     plt.xlabel('follower weight', fontsize=30)
-    sns.heatmap(df, annot=True, ax=ax)
+    sns.heatmap(df, annot=True, ax=ax, vmin=0, vmax=1)
     ax.tick_params(axis='y', size=15, rotation=0, labelsize=30)
     ax.tick_params(axis='x', size=15, labelsize=30)
     plt.savefig(f'{output_path}.jpg')
@@ -263,5 +243,5 @@ if __name__ == '__main__':
     # run_only_gc(folder='011221/04-12-21_1304')
     # run_only_gc(folder='301121/30-11-21_1718')
     # run(top_folder='temp')
-    run(top_folder='12032022_von_mise_noise/17-03-22_0913_von_mise_noise_CRW_100', warm_up_window=0,
+    run(top_folder='26032022_von_mise_noise/26-03-22_1145_one_follower_CRW_100', warm_up_window=0,
         separate_outputs=True)

@@ -37,6 +37,7 @@ def run_vic_snap(outpath, model_params: {}, steps=1, frames=100, suffix_folder='
     save_configuration(nested_path, model_params_copy)
 
     model = VicsekModel(**model_params)
+    model.calculate_plot_size(frames)
     n = len(str(steps * frames))
 
     # Save initial config
@@ -108,18 +109,19 @@ def create_outputs(particles_coords_list, folder_path):
 
 if __name__ == "__main__":
     path = os.getcwd()
-    output_path = f'{path}\\examples\\12032022_von_mise_noise'
+    output_path = f'{path}\\examples\\28032022_von_mise_noise'
     run_vic_snap(output_path,
                 {"length": 10,
                  "density": 0.1,
                  "speed": 0.2,
-                 "noise": [0.3, 0.1, 0.4],
+                 "noise": [0.3, 0.1, 0.2],
                  "radius": 10,
                  "leader_weights": [1, 0],
                  "follower_weights": [0, 0.8, 0],
-                 "memory_weights": [0.7, 0.1, 0.6],
+                 "memory_weights": [0.7, 0.1, 0.8],
                  "rw_type": 'CRW',
-                 "seed": 144336}, frames=100, suffix_folder=f'_von_mise_noise_one_follower_CRW_100', run_gc=True, separate_outputs=True)
+                 "seed": 165,
+                 "center_start": True}, frames=100, suffix_folder=f'_center_start_0', run_gc=True, separate_outputs=True)
 
     # for follower_weight in range(1,12):
     #     params = {"length": 10,
