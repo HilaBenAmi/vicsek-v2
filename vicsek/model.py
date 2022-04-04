@@ -373,14 +373,14 @@ class VicsekModel:
 
         ## correlated random walk - CRW
         if self.RW_type == 'CRW':
-            noise_vector = (noise_vector + self._headings) % (2 * np.pi)
+            noise_vector = noise_vector + self._headings
 
         # Set new headings
         self._headings = (
             self.headings * self.memory_weights +  # self memory
             np.arctan2(sum_of_sines, sum_of_cosines) * self.follower_weights * mask_neighbors_leaders_ratio +  # interactions
             noise_vector * self.noise) / (
-            self.memory_weights + self.follower_weights * mask_neighbors_leaders_ratio + self.noise)
+            self.memory_weights + self.follower_weights * mask_neighbors_leaders_ratio + self.noise) % (2 * np.pi)
 
         # print(f"headings: \n {self._headings}")
 
