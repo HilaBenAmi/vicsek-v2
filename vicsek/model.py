@@ -335,7 +335,7 @@ class VicsekModel:
         self.update_state_dfs(None, None)
 
     def calculate_plot_size(self, frames_no):
-        step_size = self.speed[0] * frames_no
+        step_size = self.speed[0] * frames_no / 2
         self.x_max = self.positions[0].max() + step_size
         self.x_min = self.positions[0].min() - step_size
         self.y_max = self.positions[1].max() + step_size

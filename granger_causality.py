@@ -4,6 +4,7 @@ from pathlib import Path
 from copy import deepcopy
 import numpy as np
 import pandas as pd
+import math
 from statsmodels.tsa.api import VAR
 from statsmodels.tsa.stattools import adfuller, kpss, grangercausalitytests
 import json
@@ -12,6 +13,7 @@ from itertools import permutations
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import figure
+from itertools import combinations
 
 # import logging
 # logger = logging.getLogger('my_module_name')
@@ -22,50 +24,11 @@ TEST = 'ssr_chi2test'
 
 
 def load_file(path):
-    df = pd.read_csv(path, usecols=['frame_no', 'cell_id', 'x', 'y', 'heading'])
+    df = pd.read_csv(path, usecols=['frame_no', 'cell_id', 'heading', 'x', 'y'])
     sim_param_path = str(path).replace("frames_dfs", "simulation_params").replace("csv", "json")
     with open(sim_param_path, 'r') as f:
         sim_params_dict = json.load(f)
     return df, sim_params_dict
-
-
-def var_test(df):
-    opt_lag_list = []
-    for cell_id in df['cell_id'].unique():
-        # print(f"** start test stationary - cell_id: {cell_id} **")
-        cell_trajectory = df[df['cell_id'] == cell_id].copy().set_index('frame_no').drop(columns=['cell_id'])
-        cell_trajectory['dx'] = cell_trajectory['x'].diff()
-        cell_trajectory['dy'] = cell_trajectory['y'].diff()
-        cell_trajectory = cell_trajectory.drop(columns=['x', 'y'])
-        cell_trajectory = cell_trajectory.dropna()
-        model = VAR(cell_trajectory)
-        lags_results = model.select_order(MAXLAG)
-        lags = [lag_results.aic, lag_results.bic]
-        opt_lag_list.append(lags[np.argmin(lags)])
-        return
-        # # print(order_results.ics)
-        # print(order_results.selected_orders)
-        # results = model.fit(MAXLAGs=order_results.selected_orders['aic'], ic='aic')
-        # print(results.summary())
-        # print('*******************************')
-
-        aic_list = []
-        for i in range(0, MAXLAG + 1):
-            result = model.fit(i)
-            aic_list.append(result.aic)
-            # print('Lag Order =', i)
-            # print('AIC : ', result.aic, '\n')
-            # print('BIC : ', result.bic)
-        # print(f"The optimal lag: {np.argmin(aic_list)} with minimum aic: {np.min(aic_list)}")
-        opt_lag = np.argmin(aic_list)
-        min_aic = np.min(aic_list)
-        opt_lag_dict['opt_lag'].append(opt_lag)
-        opt_lag_dict['min_aic'].append(min_aic)
-    optimal_lag = max(opt_lag_dict['opt_lag'], key=opt_lag_dict['opt_lag'].count)
-    print(f"The optimal lag that appears the most: {optimal_lag}")
-    print(
-        f"The final optimal lag: {opt_lag_dict['opt_lag'][np.argmin(opt_lag_dict['min_aic'])]} with final minimum aic: {np.min(opt_lag_dict['min_aic'])}")
-    return optimal_lag
 
 
 def kpss_test(feature_series):
@@ -90,25 +53,23 @@ def adf_test(feature_series):
     return result[1]
 
 
-def stationary_test(df, cell_id, warm_up_window):
+def stationary_test(df, col, cell_id, warm_up_window):
     # print(f"** start test stationary - cell_id: {cell_id} **")
+    d_col = f'd{col}'
     cell_trajectory = df[df['cell_id'] == cell_id].iloc[warm_up_window:].copy().reset_index(drop=True)
-    cell_trajectory['dx'] = cell_trajectory['x'].diff()
-    cell_trajectory['dy'] = cell_trajectory['y'].diff()
-    cell_trajectory['dh'] = cell_trajectory['heading'].diff()
-    cell_trajectory = cell_trajectory.drop(columns=['x', 'y', 'heading'])
+    cell_trajectory[d_col] = cell_trajectory[col].diff()
+    cell_trajectory = cell_trajectory.drop(columns=[col])
     cell_trajectory = cell_trajectory.dropna().reset_index(drop=True)
     is_stat_per_feature = []
-    for col in ['dx', 'dy', 'dh']:
-        p_value_adf = adf_test(cell_trajectory[col])
-        p_value_kpss = kpss_test(cell_trajectory[col])
-        is_stat_per_feature.append(True if p_value_adf <= 0.05 or p_value_kpss >= 0.05 else False)
+    p_value_adf = adf_test(cell_trajectory[d_col])
+    p_value_kpss = kpss_test(cell_trajectory[d_col])
+    is_stat_per_feature.append(True if p_value_adf <= 0.05 or p_value_kpss >= 0.05 else False)
     # cell_trajectory.to_csv(f'./stat_files/{all(is_stat_per_feature)}_stat_cell_{cell_id}.csv')
     return all(is_stat_per_feature)
 
 
-def granger_causality_matrix(data, features, res_df, res_col, test='ssr_chi2test', maxlag=MAXLAG, verbose=False,
-                             warm_up_window=0):
+def granger_causality_matrix(data, features, neigh_df, res_df, res_col, test='ssr_chi2test', maxlag=MAXLAG,
+                             verbose=False, warm_up_window=0, neigh_radius=10, neigh_radius_ratio=0.95):
     """
         The row are the response (y) and the columns are the predictors (x)
         If a given p-value is < significance level (0.05), we can reject the null hypothesis and conclude that walmart_x Granger causes apple_y.
@@ -119,14 +80,16 @@ def granger_causality_matrix(data, features, res_df, res_col, test='ssr_chi2test
         time_series_per_cell = {}
         feature_data = data[['frame_no', 'cell_id', col]].copy()
         for cell_id in feature_data['cell_id'].unique():
-            is_stat = stationary_test(data, cell_id, warm_up_window)
+            is_stat = stationary_test(data, col, cell_id, warm_up_window)
             if not is_stat:
                 continue
             time_series_per_cell[cell_id] = feature_data[feature_data['cell_id'] == cell_id].iloc[
                                             warm_up_window:].set_index('frame_no')[col].diff()[1:]
+        neigh_pairs = check_neighbors(neigh_df, time_series_per_cell.keys(), neigh_radius, neigh_radius_ratio)
         time_frame_df = pd.DataFrame(time_series_per_cell)
         for p, r in res_df[col].index:
-            if p not in time_frame_df or r not in time_frame_df:
+            if p not in time_frame_df or r not in time_frame_df or \
+                    ((p, r) not in neigh_pairs and (r, p) not in neigh_pairs):
                 continue
             pair_cells = time_frame_df[[r, p]]
             model = VAR(pair_cells)
@@ -149,6 +112,23 @@ def granger_causality_matrix(data, features, res_df, res_col, test='ssr_chi2test
             p_value = gc_result[opt_lag][0][test][1]
             res_df[col].loc[(p, r), int(res_col)] = p_value
     return res_df
+
+
+def check_neighbors(neigh_df, cells_ids, neigh_radius, neigh_dist_ratio):
+    neigh_list = []
+    all_pairs = list(combinations(list(cells_ids), 2))
+    for c1, c2 in all_pairs:
+        c1_pos_df = neigh_df[neigh_df['cell_id'] == c1]
+        c2_pos_df = neigh_df[neigh_df['cell_id'] == c2]
+        dist_df = c1_pos_df.apply(lambda c1_pos: math.dist(c1_pos[['x', 'y']].values,
+                                                 c2_pos_df[c2_pos_df['frame_no'] == c1_pos['frame_no']].iloc[0][
+                                                     ['x', 'y']].values), axis=1)
+        is_neigh = dist_df < neigh_radius
+        if np.mean(is_neigh) >= neigh_dist_ratio:
+            neigh_list.append((c1, c2))
+        else:
+            print(f'neighbors test: {c1} and {c2} are neighbors only on {np.mean(is_neigh)}% of the frames')
+    return neigh_list
 
 
 def expand_weights_vector(weights_vector, num_of_cells):
@@ -187,7 +167,7 @@ def init_gc_df(sim_params_dict, cell_ids, columns):
     return all_simulation_gc_df
 
 
-def run(paths_list=None, top_folder='', warm_up_window=0, separate_outputs=False):
+def run(paths_list=None, top_folder='', warm_up_window=0, separate_outputs=False, neigh_radius_ratio=0.95):
     if separate_outputs:
         separate_output_dict = {0: 'leader', 1: 'follower', 2: 'control'}
     else:
@@ -202,13 +182,15 @@ def run(paths_list=None, top_folder='', warm_up_window=0, separate_outputs=False
         print(f'start handling file no. {simulation_no}: {folder}/{filename}')
         weight_param = folder[folder.rindex('_') + 1:]
         df, sim_params_dict = load_file(path)
-        # df = df.drop(columns=['heading'])
         df['cell_id'] = df['cell_id'].astype(str)
+        neigh_df = df[['cell_id', 'frame_no', 'x', 'y']].copy()
+        df = df.drop(columns=['x', 'y'])
         cell_ids = df['cell_id'].unique()
         if simulation_no == 0:
             all_simulation_gc_df = init_gc_df(sim_params_dict, cell_ids, df.columns)
-        granger_causality_matrix(df, features=set(df.columns) - set(['frame_no', 'cell_id']), maxlag=15,
-                                   res_df=all_simulation_gc_df, res_col=weight_param, warm_up_window=warm_up_window)
+        granger_causality_matrix(df, features=set(df.columns) - set(['frame_no', 'cell_id']), neigh_df=neigh_df, maxlag=15,
+                                 res_df=all_simulation_gc_df, res_col=weight_param, warm_up_window=warm_up_window,
+                                 neigh_radius=sim_params_dict['radius'], neigh_radius_ratio=neigh_radius_ratio)
     for col, df in all_simulation_gc_df.items():
         for output_id, output_name in separate_output_dict.items():
             if output_name != 'all':
@@ -243,5 +225,5 @@ if __name__ == '__main__':
     # run_only_gc(folder='011221/04-12-21_1304')
     # run_only_gc(folder='301121/30-11-21_1718')
     # run(top_folder='temp')
-    run(top_folder='26032022_von_mise_noise/26-03-22_1145_one_follower_CRW_100', warm_up_window=0,
-        separate_outputs=True)
+    run(top_folder='04042022_von_mise_noise/04-04-22_1348_150', warm_up_window=0,
+        separate_outputs=True, neigh_radius_ratio=0.9)
