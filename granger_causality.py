@@ -217,28 +217,47 @@ def run(paths_list=None, top_folder='', warm_up_window=0, separate_outputs=False
         #     create_gc_heatmap(sub_df, output_path)
         create_multiple_gc_plot(df_all, files_path, col, simulation_name, dominant_leaders, dominant_followers, stat_ratio,
                               is_all=True)
+    # create_gc_heatmap(df_all, f'{files_path}/gc_{col}_all', simulation_name, dominant_leaders,
+    #                   dominant_followers, stat_ratio,
+    #                   is_all=True)
 
 def create_multiple_gc_plot(dfs_dict, files_path, col, simulation_name, dominant_leaders, dominant_followers, stat_ratio, is_all=False):
+    # fig = plt.figure(constrained_layout=True)
+    fig_, subfigs = plt.subplots(1, len(dfs_dict), sharey=True, figsize=(70, 70), squeeze=False)
+
+    count_figures = 0
     for df_name, df_all in dfs_dict.items():
         # df_all.to_csv(f'{files_path}/gc_{col}_{df_name}_all.csv')
 
-        
+        create_gc_heatmap(subfigs[0][count_figures], df_all, f'{files_path}/gc_{col}_{df_name}_all', simulation_name,
+                          dominant_leaders, dominant_followers, stat_ratio, count_figures == len(dfs_dict)-1, is_all)
+        subfigs[0][count_figures].set_xlabel(df_name, fontsize='x-large')
 
-        create_gc_heatmap(df_all, f'{files_path}/gc_{col}_all', simulation_name, dominant_leaders,
-                          dominant_followers, stat_ratio,
-                          is_all=True)
+        # if count_figures == len(dfs_dict)//2:
+        #     subfigs[count_figures].set_xlabel('follower', fontsize=60)
+        # if count_figures == 0:
+        #     subfigs[0][count_figures].set_ylabel('leader', fontsize=60)
 
-def create_gc_heatmap(df, output_path, simulation_name, dominant_leaders, dominant_followers, stat_ratio, is_all=False):
-    if is_all:
-        fig, ax = plt.subplots(figsize=(70, 70))  # Sample figsize in inches
-    else:
-        fig, ax = plt.subplots(figsize=(70, 90))  # Sample figsize in inches
+        count_figures += 1
+
+    fig_.suptitle(f'GC p-value - {simulation_name}', fontsize='xx-large')
+    fig_.supxlabel('follower', fontsize='xx-large')
+    fig_.supylabel('leaders', fontsize='xx-large')
+    plt.savefig(f'{files_path}/gc_{col}_all.jpg')
+    plt.close()
+
+
+def create_gc_heatmap(ax, df, output_path, simulation_name, dominant_leaders, dominant_followers, stat_ratio, cbar, is_all=False):
+    # if is_all:
+    #     fig, ax = plt.subplots(figsize=(70, 70))  # Sample figsize in inches
+    # else:
+    #     fig, ax = plt.subplots(figsize=(70, 90))  # Sample figsize in inches
     plt.rc('font', size=40)  # controls default text sizes
     plt.rc('legend', fontsize=50)  # legend fontsize
-    sns.heatmap(df.iloc[::-1], annot=True, ax=ax, vmin=0.05, vmax=0.4)
+    sns.heatmap(df.iloc[::-1], annot=True, ax=ax, vmin=0.05, vmax=0.4, cbar=cbar)
     if is_all:
-        ax.set_ylabel('leader', fontsize=60)
-        ax.set_xlabel('follower', fontsize=60)
+        pass
+        # ax.set_xlabel('follower', fontsize='x-large')
     else:
         ax.set_ylabel('cells pairs', fontsize=60)
         ax.set_xlabel('follower weight', fontsize=60)
@@ -246,10 +265,11 @@ def create_gc_heatmap(df, output_path, simulation_name, dominant_leaders, domina
     add_bold_lines(ax, dominant_leaders, number_of_cells=df.shape[0], orientation='horizon', color='green')
     ax.tick_params(axis='y', size=15, rotation=0, labelsize=50)
     ax.tick_params(axis='x', size=15, labelsize=50)
-    ax.set_title(f'GC p-value - {simulation_name} \n passed the stationary test - {stat_ratio*100}%\n',
-                 fontdict={'fontsize': 60})
-    plt.savefig(f'{output_path}.jpg')
-    plt.close()
+    # ax.set_title(f'GC p-value - {simulation_name} \n passed the stationary test - {stat_ratio*100}%\n',
+    #              fontdict={'fontsize': 60})
+    ax.set_title(f'passed the stationary test - {stat_ratio*100}%', fontdict={'fontsize': 60})
+    # plt.savefig(f'{output_path}.jpg')
+    # plt.close()
 
 
 def add_bold_lines(ax, dominant_cells, number_of_cells, orientation, color):
