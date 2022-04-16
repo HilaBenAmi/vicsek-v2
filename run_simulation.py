@@ -27,10 +27,13 @@ def run_vic_ani(outpath, model_params: {}):
 
 def run_vic_snap(outpath, model_params: {}, steps=1, frames=100, suffix_folder='', run_gc=False, separate_outputs=False,
                  neigh_radius_ratio=0.95):
-    nested_path = f"{outpath}/{ts}{suffix_folder}/"
-    for p in [outpath, nested_path]:
+    last_folder = f"{ts}{suffix_folder}"
+    folders_list = outpath.split('/') + [last_folder]
+    nested_path = folders_list[0] + '/'
+    for p in folders_list[1:]:
+        nested_path += p + '/'
         try:
-            os.mkdir(p)
+            os.mkdir(nested_path)
         except FileExistsError:
             pass
     model_params_copy = model_params.copy()
@@ -110,20 +113,20 @@ def create_outputs(particles_coords_list, folder_path):
 
 if __name__ == "__main__":
     path = os.getcwd()
-    output_path = f'{path}\\examples\\05042022_experiments'
-    run_vic_snap(output_path,
-                {"length": 10,
-                 "density": 0.1,
-                 "speed": 0.2,
-                 "noise": [0.3, 0.1, 0.2],
-                 "radius": 20,
-                 "leader_weights": [1, 0],
-                 "follower_weights": [0, 0.8, 0.3],
-                 "memory_weights": [0.7, 0.1, 0.5],
-                 "rw_type": 'CRW',
-                 "seed": 16555,
-                 "center_start": True}, frames=150, suffix_folder=f'_10_cells_center_all_followers_r20_GC_0', run_gc=True, separate_outputs=True,
-                 neigh_radius_ratio=0.9)
+    output_path = f'{path}\\examples\\13042022_experiments'
+    # run_vic_snap(output_path,
+    #             {"length": 10,
+    #              "density": 0.1,
+    #              "speed": 0.2,
+    #              "noise": [0.3, 0.1, 0.2],
+    #              "radius": 20,
+    #              "leader_weights": [1, 0],
+    #              "follower_weights": [0, 0.8, 0.3],
+    #              "memory_weights": [0.7, 0.1, 0.5],
+    #              "rw_type": 'CRW',
+    #              "seed": 16555,
+    #              "center_start": True}, frames=150, suffix_folder=f'_10_cells_center_all_followers_r20_GC_0', run_gc=True, separate_outputs=True,
+    #              neigh_radius_ratio=0.9)
 
     # run_vic_snap(output_path,
     #              {"length": 10,
@@ -198,17 +201,24 @@ if __name__ == "__main__":
     #              separate_outputs=True,
     #              neigh_radius_ratio=0.9)
 
-    # for follower_weight in range(1,12):
-    #     params = {"length": 10,
-    #                  "density": 0.1,  # how many cells in one unit
-    #                  "speed": 0.2,  # pixels per frame
-    #                  "noise": 0,
-    #                  "radius": 100,  # the radius in pixels to determine neighbors
-    #                  "leader_weights": [15, 0],  # fill the gap with the right value
-    #                  "follower_weights": [0,0,0,0,0,0,0,0,0,follower_weight], # from right to left
-    #                  "memory_weights": [1],
-    #                  "seed": 12236}
-    #     run_vic_snap(output_path, params, suffix_folder=f'_follower_{follower_weight}')
+    output_path = f'{path}/examples/16042022_experiments/10_cells_all_followers_r20'
+    for weight in range(3, 9):
+        weight = weight/10
+        params = {"length": 10,
+                  "density": 0.1,
+                  "speed": 0.2,
+                  "noise": [0.3, 0.1, 0.3],
+                  "radius": 20,
+                  "leader_weights": [1, 0],
+                  "follower_weights": [0, weight, 0.2],
+                  "memory_weights": [0.7, 0.9-weight, 0.5],
+                  "rw_type": 'CRW',
+                  "seed": 1655,
+                  "center_start": False}
+        run_vic_snap(output_path, params, frames=150,
+                     suffix_folder=f'_Follower-Weight-{weight}',
+                     run_gc=False, separate_outputs=True,
+                     neigh_radius_ratio=0.9)
 
     # for weight in range(1, 10):
     #     leader_weight = weight / 10
