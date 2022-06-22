@@ -113,7 +113,7 @@ def create_outputs(particles_coords_list, folder_path):
 
 if __name__ == "__main__":
     path = os.getcwd()
-    output_path = f'{path}\\examples\\13042022_experiments'
+    output_path = f'{path}\\examples\\22062022_experiments'
     # run_vic_snap(output_path,
     #             {"length": 10,
     #              "density": 0.1,
@@ -201,20 +201,20 @@ if __name__ == "__main__":
     #              separate_outputs=True,
     #              neigh_radius_ratio=0.9)
 
-    output_path = f'{path}/examples/16042022_experiments/10_cells_all_followers_r20'
-    for weight in range(3, 9):
-        weight = weight/10
+    output_path = f'{path}/examples/22062022_experiments/10_cells_center_one_followers_r20_v0'
+    for weight in [3, 6, 9]:
+        weight = np.round(weight/10, 1)
         params = {"length": 10,
                   "density": 0.1,
-                  "speed": 0.2,
-                  "noise": [0.3, 0.1, 0.3],
+                  "speed": 0.3,
+                  "noise": [0.3, 0.1, 0.6],
                   "radius": 20,
                   "leader_weights": [1, 0],
-                  "follower_weights": [0, weight, 0.2],
-                  "memory_weights": [0.7, 0.9-weight, 0.5],
+                  "follower_weights": [0, weight, 0],
+                  "memory_weights": [0.7, np.round(0.9-weight, 1), 0.4],
                   "rw_type": 'CRW',
                   "seed": 1655,
-                  "center_start": False}
+                  "center_start": True}
         run_vic_snap(output_path, params, frames=150,
                      suffix_folder=f'_Follower-Weight-{weight}',
                      run_gc=False, separate_outputs=True,

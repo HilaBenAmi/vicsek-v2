@@ -493,12 +493,12 @@ class VicsekModel:
             #     ax.annotate(weights_params[i], (pos[0], pos[1]), fontsize=8, c='g')
 
         if annotate:
-            ax.annotate(
-                f"OP = {self.order_parameter:1.2f}",
-                xy=(0.9, -0.1),
-                xycoords="axes fraction",
-                fontsize=12,
-            )
+            # ax.annotate(
+            #     f"OP = {self.order_parameter:1.2f}",
+            #     xy=(0.9, -0.1),
+            #     xycoords="axes fraction",
+            #     fontsize=12,
+            # )
             ax.annotate(
                 f"t = {self.current_step}",
                 xy=(0, -0.1),

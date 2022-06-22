@@ -1,4 +1,3 @@
-import os
 import warnings
 from pathlib import Path
 
@@ -8,6 +7,7 @@ import pandas as pd
 import math
 from statsmodels.tsa.api import VAR
 from statsmodels.tsa.stattools import adfuller, kpss, grangercausalitytests
+import os
 import json
 
 from itertools import permutations
@@ -20,16 +20,15 @@ from itertools import combinations
 # logger = logging.getLogger('my_module_name')
 warnings.filterwarnings("ignore")
 
-MAXLAG = 15
 TEST = 'ssr_chi2test'
+MAXLAG = 20
+NEIGH_RADIUS = 400
+NEIGH_RADIUS_RATIO = 0.95
 
 
 def load_file(path):
     df = pd.read_csv(path, usecols=['frame_no', 'cell_id', 'heading', 'x', 'y'])
-    sim_param_path = str(path).replace("frames_dfs", "simulation_params").replace("csv", "json")
-    with open(sim_param_path, 'r') as f:
-        sim_params_dict = json.load(f)
-    return df, sim_params_dict
+    return df
 
 
 def kpss_test(feature_series):
@@ -65,7 +64,7 @@ def stationary_test(cell_trajectory):
 
 
 def granger_causality_matrix(data, features, neigh_df, res_df, res_col, weight_param, test='ssr_chi2test', maxlag=MAXLAG,
-                             verbose=False, warm_up_window=0, neigh_radius=10, neigh_radius_ratio=0.95):
+                             verbose=False, warm_up_window=0, neigh_radius=10, neigh_radius_ratio=NEIGH_RADIUS_RATIO):
     """
         The row are the response (y) and the columns are the predictors (x)
         If a given p-value is < significance level (0.05), we can reject the null hypothesis and conclude that walmart_x Granger causes apple_y.
@@ -84,6 +83,7 @@ def granger_causality_matrix(data, features, neigh_df, res_df, res_col, weight_p
             is_stat = stationary_test(delta_values_fitted.reset_index(drop=True, inplace=False))
             if not is_stat:
                 count_non_stat += 1
+                print(f'{cell_id} is not stationary')
                 continue
             time_series_per_cell[cell_id] = delta_values_fitted
         neigh_pairs = check_neighbors(neigh_df, time_series_per_cell.keys(), neigh_radius, neigh_radius_ratio)
@@ -98,7 +98,7 @@ def granger_causality_matrix(data, features, neigh_df, res_df, res_col, weight_p
             if p not in time_frame_df or r not in time_frame_df or \
                     ((p, r) not in neigh_pairs and (r, p) not in neigh_pairs):
                 continue
-            pair_cells = time_frame_df[[r, p]]
+            pair_cells = time_frame_df[[r, p]].dropna()
             model = VAR(pair_cells)
             adjusted_lag = maxlag
             while True:
@@ -126,11 +126,13 @@ def check_neighbors(neigh_df, cells_ids, neigh_radius, neigh_dist_ratio, verbose
     neigh_list = []
     all_pairs = list(combinations(list(cells_ids), 2))
     for c1, c2 in all_pairs:
-        c1_pos_df = neigh_df[neigh_df['cell_id'] == c1]
-        c2_pos_df = neigh_df[neigh_df['cell_id'] == c2]
-        dist_df = c1_pos_df.apply(lambda c1_pos: math.dist(c1_pos[['x', 'y']].values,
-                                                 c2_pos_df[c2_pos_df['frame_no'] == c1_pos['frame_no']].iloc[0][
-                                                     ['x', 'y']].values), axis=1)
+        c1_pos_df = neigh_df[neigh_df['cell_id'] == c1].set_index('frame_no')
+        c2_pos_df = neigh_df[neigh_df['cell_id'] == c2].set_index('frame_no')
+        merge_df = pd.concat([c1_pos_df.add_prefix('c1_'), c2_pos_df.add_prefix('c2_')], axis=1).dropna()
+        # dist_df = c1_pos_df.apply(lambda c1_pos: math.dist(c1_pos[['x', 'y']].values,
+        #                                          c2_pos_df[c2_pos_df['frame_no'] == c1_pos['frame_no']].iloc[0][
+        #                                              ['x', 'y']].values), axis=1)
+        dist_df = merge_df.apply(lambda pos: math.dist(pos[['c1_x', 'c1_y']].values, pos[['c2_x', 'c2_y']].values), axis=1)
         is_neigh = dist_df < neigh_radius
         if np.mean(is_neigh) >= neigh_dist_ratio:
             neigh_list.append((c1, c2))
@@ -166,17 +168,18 @@ def extract_interacted_cells(sim_params_dict):
     return leaders_ids, followers_ids, dominant_leaders, dominant_followers
 
 
-def init_gc_df(all_simulation_gc_df, sim_params_dict, cell_ids, columns, sim_name):
+def init_gc_df(all_simulation_gc_df, cell_ids, columns, sim_name):
     cell_ids_int = [int(c) for c in cell_ids]
     gc_df_all = pd.DataFrame(np.full((len(cell_ids), len(cell_ids)), np.nan), columns=cell_ids_int, index=cell_ids_int)
     for col in set(columns) - set(['frame_no', 'cell_id']):
         if col not in all_simulation_gc_df:
             all_simulation_gc_df[col] = {}
-        all_simulation_gc_df[col][sim_name] = [gc_df_all.copy(), np.nan, sim_params_dict]
+        all_simulation_gc_df[col][sim_name] = [gc_df_all.copy(), np.nan]
     return all_simulation_gc_df
 
 
-def run(paths_list=None, top_folder='', warm_up_window=0, separate_outputs=False, neigh_radius_ratio=0.95):
+def run(paths_list=None, top_folder='', warm_up_window=0, separate_outputs=False, neigh_radius_ratio=NEIGH_RADIUS_RATIO,
+        maxlag=MAXLAG, neigh_radius=NEIGH_RADIUS):
     if separate_outputs:
         separate_output_dict = {0: 'leader', 1: 'follower', 2: 'control'}
     else:
@@ -184,28 +187,32 @@ def run(paths_list=None, top_folder='', warm_up_window=0, separate_outputs=False
     if paths_list is None:
         root_path = os.path.dirname(os.path.realpath(__file__))
         files_path = Path(root_path) / 'examples' / top_folder
-        paths_list = files_path.rglob('frames_dfs*.csv')
+        paths_list = files_path.rglob('*.csv')
+        try:
+            simulation_name = top_folder[top_folder.rindex('/') + 1:]
+        except:
+            simulation_name = top_folder
+    else:
+        paths_list = [Path(p) for p in paths_list]
     all_simulation_gc_df = {}
     for simulation_no, path in enumerate(paths_list):
         filename = path.name
+        files_path = path.parent
         folder = path.parent.parts[-1]
+        if not top_folder:
+            simulation_name = filename[:-4]
         print(f'start handling file no. {simulation_no}: {folder}/{filename}')
         weight_param = folder[folder.rindex('_') + 1:]
-        df, sim_params_dict = load_file(path)
+        df = load_file(path)
         df['cell_id'] = df['cell_id'].astype(str)
         neigh_df = df[['cell_id', 'frame_no', 'x', 'y']].copy()
         df = df.drop(columns=['x', 'y'])
         cell_ids = df['cell_id'].unique()
-        all_simulation_gc_df = init_gc_df(all_simulation_gc_df, sim_params_dict, cell_ids, df.columns, sim_name=weight_param)
-        granger_causality_matrix(df, features=set(df.columns) - set(['frame_no', 'cell_id']), neigh_df=neigh_df, maxlag=15,
+        all_simulation_gc_df = init_gc_df(all_simulation_gc_df, cell_ids, df.columns, sim_name=weight_param)
+        granger_causality_matrix(df, features=set(df.columns) - set(['frame_no', 'cell_id']), neigh_df=neigh_df, maxlag=maxlag,
                                  res_df=all_simulation_gc_df, res_col=weight_param, weight_param=weight_param,
-                                 warm_up_window=warm_up_window, neigh_radius=sim_params_dict['radius'],
+                                 warm_up_window=warm_up_window, neigh_radius=neigh_radius,
                                  neigh_radius_ratio=neigh_radius_ratio)
-
-    try:
-        simulation_name = top_folder[top_folder.rindex('/')+1:]
-    except:
-        simulation_name = top_folder
 
     for col, sim_results_instances in all_simulation_gc_df.items():
         create_multiple_gc_plot(sim_results_instances, files_path, col, simulation_name, is_all=True)
@@ -214,41 +221,41 @@ def run(paths_list=None, top_folder='', warm_up_window=0, separate_outputs=False
 def create_multiple_gc_plot(dfs_dict, files_path, col, simulation_name, is_all):
     no_simulations = len(dfs_dict)
     no_cells = list(dfs_dict.values())[0][0].shape[0]
-    width = no_simulations * no_cells * 7
+    width = no_simulations * no_cells * 5
     height = no_cells * 6
     fig_, subfigs = plt.subplots(1, len(dfs_dict), sharey=True, figsize=(width, height), squeeze=False)
 
     count_figures = 0
-    for df_name, (df_all, stat_ratio, sim_params) in dfs_dict.items():
-        leaders_ids, followers_ids, dominant_leaders, dominant_followers = extract_interacted_cells(sim_params)
+    for df_name, (df_all, stat_ratio) in dfs_dict.items():
+        # leaders_ids, followers_ids, dominant_leaders, dominant_followers = extract_interacted_cells(sim_params)
         # df_all.to_csv(f'{files_path}/gc_{col}_{df_name}_all.csv')
         create_gc_heatmap(subfigs[0][count_figures], df_all, f'{files_path}/gc_{col}_{df_name}_all', simulation_name,
-                          dominant_leaders, dominant_followers, stat_ratio, count_figures == len(dfs_dict)-1, is_all)
+                          stat_ratio, count_figures == len(dfs_dict)-1, is_all)
         subfigs[0][count_figures].set_xlabel(df_name, fontsize='x-large')
         count_figures += 1
 
     fig_.suptitle(f'GC p-value {col} - {simulation_name}', fontsize='xx-large')
     fig_.supxlabel('follower', fontsize='xx-large')
     fig_.supylabel('leaders', fontsize='xx-large')
-    plt.savefig(f'{files_path}/gc_{col}_all.png')
+    plt.savefig(f'{files_path}/{simulation_name}_gc_{col}_all.jpg')
     plt.close()
 
 
-def create_gc_heatmap(ax, df, output_path, simulation_name, dominant_leaders, dominant_followers, stat_ratio, cbar, is_all):
+def create_gc_heatmap(ax, df, output_path, simulation_name, stat_ratio, cbar, is_all):
     if not is_all:
-        fig, ax = plt.subplots(figsize=(80, 70), dpi=500)  # Sample figsize in inches
+        fig, ax = plt.subplots(figsize=(70, 90))  # Sample figsize in inches
         ax.set_title(f'GC p-value - {simulation_name} \n passed the stationary test - {(1-stat_ratio)*100}%\n',
                      fontdict={'fontsize': 60})
     else:
         ax.set_title(f'passed the stationary test - {(1-stat_ratio)*100}%', fontdict={'fontsize': 60})
-    plt.rc('font', size=70)  # controls default text sizes
+    plt.rc('font', size=40)  # controls default text sizes
     plt.rc('legend', fontsize=50)  # legend fontsize
     sns.heatmap(df.iloc[::-1], annot=True, ax=ax, vmin=0, vmax=0.1, cbar=cbar)
     if not is_all:
         ax.set_ylabel('cells pairs', fontsize=60)
         ax.set_xlabel('follower weight', fontsize=60)
-    add_bold_lines(ax, dominant_followers, number_of_cells=df.shape[0], orientation='vertical', color='green')
-    add_bold_lines(ax, dominant_leaders, number_of_cells=df.shape[0], orientation='horizon', color='red')
+    # add_bold_lines(ax, dominant_followers, number_of_cells=df.shape[0], orientation='vertical', color='red')
+    # add_bold_lines(ax, dominant_leaders, number_of_cells=df.shape[0], orientation='horizon', color='green')
     ax.tick_params(axis='y', size=15, rotation=0, labelsize=50)
     ax.tick_params(axis='x', size=15, labelsize=50)
     # plt.savefig(f'{output_path}.jpg')
@@ -272,14 +279,11 @@ def add_bold_lines(ax, dominant_cells, number_of_cells, orientation, color):
 
 
 if __name__ == '__main__':
-    # path = 'C:\\Users\\hilon\\OneDrive - post.bgu.ac.il\\תואר שני\\master\\vicsek-v2\\examples\\111221'
-    # name = 'gc_y'
-    # df = pd.read_csv(f'{path}/{name}.csv', index_col=[0, 1])
-    # create_gc_heatmap(df, path, name)
+    run(paths_list=['C:/Users/hilon/OneDrive - post.bgu.ac.il/תואר שני/master/vicsek-v2/examples/amit_data/s3_g1.csv'], warm_up_window=0,
+        separate_outputs=True, neigh_radius_ratio=NEIGH_RADIUS_RATIO, maxlag=MAXLAG,
+        neigh_radius=NEIGH_RADIUS)
 
-    # run(folder='011221/04-12-21_1302')
-    # run_only_gc(folder='011221/04-12-21_1304')
-    # run_only_gc(folder='301121/30-11-21_1718')
-    # run(top_folder='temp')
-    run(top_folder='22062022_experiments/10_cells_center_one_followers_r20_v0', warm_up_window=0,
-        separate_outputs=True, neigh_radius_ratio=0.9)
+    ## if you want to process a folder and then to get all plots in the same figure use top_folder
+    # run(top_folder='amit_data', warm_up_window=0,
+    #     separate_outputs=True,neigh_radius_ratio=NEIGH_RADIUS_RATIO, maxlag=MAXLAG,
+    #     neigh_radius=NEIGH_RADIUS)
